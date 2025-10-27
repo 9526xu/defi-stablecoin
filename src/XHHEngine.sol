@@ -88,6 +88,17 @@ contract XHHEngine is ReentrancyGuard {
             s_collateralTokenFeeds[tokenAddrs[i]] = tokenFeeds[i];
         }
     }
+    /**
+     * @dev Deposits `amount` of `tokenAddr` to the contract and mints `amount` of stablecoin to the caller.
+     *
+     * @param tokenAddr The address of the collateral token.
+     * @param amount The amount of collateral tokens to deposit.
+     */
+
+    function depositCollateralAndMintXHH(address tokenAddr, uint256 amount) public {
+        depositCollateral(tokenAddr, amount);
+        mintXHH(amount);
+    }
 
     /**
      * @dev Deposits `amount` of `tokenAddr` to the contract.
@@ -133,6 +144,17 @@ contract XHHEngine is ReentrancyGuard {
     function _mintXHH(address user, uint256 amount) internal {
         s_mints[user] += amount;
         _stablecoin.mint(user, amount);
+    }
+
+    /**
+     * @dev Redeems `amount` of `tokenAddr` from the contract and burns `amount` of stablecoin from the caller.
+     *
+     * @param tokenAddr The address of the collateral token.
+     * @param amount The amount of collateral tokens to redeem.
+     */
+    function redeemCollateralAndBurnXHH(address tokenAddr, uint256 amount) public {
+        redeemCollateral(tokenAddr, amount);
+        burnXHH(amount);
     }
 
     /**
