@@ -8,16 +8,19 @@ import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/shared/interf
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 contract XHHEngine is ReentrancyGuard {
-    error XHHEngine_InvalidToken();
+    error XHHEngine_InvalidAddress(address tokenAddr);
     error XHHEngine_AmountMustBeGreaterThan0();
     error XHHEngine_TransferFailed();
     error XHHEngine_InsufficientBalance();
     error XHHEngine_InsufficientAllowance();
     error XHHEngine_InvalidPriceFeed();
     error XHHEngine_UserUnhealthy();
+    error XHHEngine_InvalidFeeds();
+    error XHHEngine_UserHealthy();
+    error XHHEngine_UserHealthyFactorNotImproved();
 
     event XHHEngine_CollateralDeposited(address indexed user, address indexed token, uint256 amount);
-    event XHHEngine_RedeemCollateral(address indexed user, address indexed token, uint256 amount);
+    event XHHEngine_RedeemCollateral(address indexed from, address indexed to, address indexed token, uint256 amount);
 
     /**
      * @dev Maps collateral token addresses to user addresses to deposited amounts.)
@@ -44,6 +47,7 @@ contract XHHEngine is ReentrancyGuard {
     uint256 private constant MIN_HEALTH_FACTOR = 1e18;
     uint256 private constant LIQUIDATION_THRESHOLD = 50;
     uint256 private constant LIQUIDATION_PRECISION = 100;
+    uint256 private constant LIQUIDATION_BONUS = 10;
 
     modifier checkAmount(uint256 amount) {
         if (amount == 0) {
@@ -52,9 +56,9 @@ contract XHHEngine is ReentrancyGuard {
         _;
     }
 
-    modifier checkToken(address tokenAddr) {
+    modifier checkZeroAddress(address tokenAddr) {
         if (tokenAddr == address(0)) {
-            revert XHHEngine_InvalidToken();
+            revert XHHEngine_InvalidAddress(tokenAddr);
         }
 
         _;
@@ -78,9 +82,16 @@ contract XHHEngine is ReentrancyGuard {
         _;
     }
 
+    modifier checkPriceFeedAddress(address tokenAddr) {
+        if (s_collateralTokenFeeds[tokenAddr] == address(0)) {
+            revert XHHEngine_InvalidAddress(tokenAddr);
+        }
+        _;
+    }
+
     constructor(address stablecoinAddress, address[] memory tokenAddrs, address[] memory tokenFeeds) {
         if (tokenAddrs.length != tokenFeeds.length) {
-            revert XHHEngine_InvalidToken();
+            revert XHHEngine_InvalidFeeds();
         }
         s_collateralTokens = tokenAddrs;
         _stablecoin = XHHStablecoin(stablecoinAddress);
@@ -92,12 +103,13 @@ contract XHHEngine is ReentrancyGuard {
      * @dev Deposits `amount` of `tokenAddr` to the contract and mints `amount` of stablecoin to the caller.
      *
      * @param tokenAddr The address of the collateral token.
-     * @param amount The amount of collateral tokens to deposit.
+     * @param collateralAmount The amount of collateral tokens to deposit.
+     * @param mintAmount The amount of stablecoin tokens to mint.
      */
 
-    function depositCollateralAndMintXHH(address tokenAddr, uint256 amount) public {
-        depositCollateral(tokenAddr, amount);
-        mintXHH(amount);
+    function depositCollateralAndMintXHH(address tokenAddr, uint256 collateralAmount, uint256 mintAmount) public {
+        depositCollateral(tokenAddr, collateralAmount);
+        mintXHH(mintAmount);
     }
 
     /**
@@ -112,7 +124,7 @@ contract XHHEngine is ReentrancyGuard {
      */
     function depositCollateral(address tokenAddr, uint256 amount)
         public
-        checkToken(tokenAddr)
+        checkZeroAddress(tokenAddr)
         checkAmount(amount)
         checkTokenBalance(tokenAddr, amount)
         checkTokenAllowance(tokenAddr, amount)
@@ -150,11 +162,12 @@ contract XHHEngine is ReentrancyGuard {
      * @dev Redeems `amount` of `tokenAddr` from the contract and burns `amount` of stablecoin from the caller.
      *
      * @param tokenAddr The address of the collateral token.
-     * @param amount The amount of collateral tokens to redeem.
+     * @param collateralAmount The amount of collateral tokens to redeem.
+     * @param burnAmount The amount of stablecoin tokens to burn.
      */
-    function redeemCollateralAndBurnXHH(address tokenAddr, uint256 amount) public {
-        redeemCollateral(tokenAddr, amount);
-        burnXHH(amount);
+    function redeemCollateralAndBurnXHH(address tokenAddr, uint256 collateralAmount, uint256 burnAmount) public {
+        redeemCollateral(tokenAddr, collateralAmount);
+        burnXHH(burnAmount);
     }
 
     /**
@@ -169,11 +182,11 @@ contract XHHEngine is ReentrancyGuard {
      */
     function redeemCollateral(address tokenAddr, uint256 amount)
         public
-        checkToken(tokenAddr)
+        checkZeroAddress(tokenAddr)
         checkAmount(amount)
         nonReentrant
     {
-        _redeemCollateral(tokenAddr, amount);
+        _redeemCollateral(tokenAddr, msg.sender, msg.sender, amount);
         //  check if the user is healthy after redeeming the collateral
         _revertIfUserUnhealthy(msg.sender);
     }
@@ -188,55 +201,68 @@ contract XHHEngine is ReentrancyGuard {
      * - `tokenAddr` must be a valid token.
      * - `amount` must be greater than 0.
      */
-    function _redeemCollateral(address tokenAddr, uint256 amount)
+    function _redeemCollateral(address tokenAddr, address from, address to, uint256 amount)
         public
-        checkToken(tokenAddr)
+        checkZeroAddress(tokenAddr)
         checkAmount(amount)
         nonReentrant
         checkTokenBalance(tokenAddr, amount)
+        checkZeroAddress(from)
+        checkZeroAddress(to)
     {
         // Check if the user has enough deposited collateral
-        uint256 depositedAmount = s_collateralDeposited[msg.sender][tokenAddr];
+        uint256 depositedAmount = s_collateralDeposited[from][tokenAddr];
         if (depositedAmount < amount) {
             revert XHHEngine_InsufficientBalance();
         }
 
-        s_collateralDeposited[msg.sender][tokenAddr] -= amount;
-        emit XHHEngine_RedeemCollateral(msg.sender, tokenAddr, amount);
+        s_collateralDeposited[from][tokenAddr] -= amount;
+        emit XHHEngine_RedeemCollateral(from, to, tokenAddr, amount);
         //  transfer tokens safely using the IERC20 interface
-        bool success = IERC20(tokenAddr).transfer(msg.sender, amount);
+        bool success = IERC20(tokenAddr).transfer(to, amount);
         if (!success) {
             revert XHHEngine_TransferFailed();
         }
     }
 
+    function burnXHH(uint256 amount) public checkAmount(amount) nonReentrant {
+        _burnXHH(msg.sender, msg.sender, amount);
+    }
+
     /**
      * @dev Burns `amount` of stablecoin from the caller.
      *
-     * 1. transfer stablecoin from the caller to the contract
-     * 2. burn stablecoin from the contract
      *
-     * because only the owner (XHHEngine) can burn stablecoin, so we need to check if the caller is the owner.
-     *
-     * Requirements:
-     *
+     * - `debtUser` must be a valid user.
+     * - `xhhFrom` must be a valid user.
      * - `amount` must be greater than 0.
      */
-    function burnXHH(uint256 amount) public checkAmount(amount) nonReentrant {
-        s_mints[msg.sender] -= amount;
+    function _burnXHH(address debtUser, address xhhFrom, uint256 amount) internal {
+        s_mints[debtUser] -= amount;
         // transfer stablecoin to the contract
-        bool success = _stablecoin.transferFrom(msg.sender, address(this), amount);
+        bool success = _stablecoin.transferFrom(xhhFrom, address(this), amount);
         if (!success) {
             revert XHHEngine_TransferFailed();
         }
         _stablecoin.burn(amount);
     }
 
-    function getCollateralTokenPrice(address tokenAddr, uint256 amount) public view returns (uint256) {
+    /**
+     * @dev Calculates the amount of USD that `amount` of `tokenAddr` tokens is worth.
+     *
+     *
+     * @param tokenAddr The address of the collateral token.
+     * @param amount The amount of collateral tokens to calculate the USD value for.
+     * @return The amount of USD that `amount` of `tokenAddr` tokens is worth.
+     */
+    function getUSDValue(address tokenAddr, uint256 amount)
+        public
+        view
+        checkAmount(amount)
+        checkPriceFeedAddress(tokenAddr)
+        returns (uint256)
+    {
         address priceFeedAddr = s_collateralTokenFeeds[tokenAddr];
-        if (priceFeedAddr == address(0)) {
-            revert XHHEngine_InvalidToken();
-        }
 
         //  get price from price feed
         AggregatorV3Interface priceFeed = AggregatorV3Interface(priceFeedAddr);
@@ -251,9 +277,84 @@ contract XHHEngine is ReentrancyGuard {
         return uint256(price) * PRICE_SCALE * amount / PRECISION_UNIT;
     }
 
+    /**
+     * @dev Calculates the amount of `tokenAddr` tokens that can be redeemed for `usdAmount` of stablecoin.
+     *
+     *
+     * @param tokenAddr The address of the collateral token.
+     * @param usdAmount The amount of stablecoin tokens to redeem,1:1 usd
+     * @return The amount of `tokenAddr` tokens that can be redeemed for `usdAmount` of stablecoin.
+     */
+    function getTokenAmountFromUSD(address tokenAddr, uint256 usdAmount)
+        public
+        view
+        checkZeroAddress(tokenAddr)
+        checkAmount(usdAmount)
+        checkPriceFeedAddress(tokenAddr)
+        returns (uint256)
+    {
+        address priceFeedAddr = s_collateralTokenFeeds[tokenAddr];
+
+        //  get price from price feed
+        AggregatorV3Interface priceFeed = AggregatorV3Interface(priceFeedAddr);
+        (, int256 price,,,) = priceFeed.latestRoundData();
+        if (price <= 0) {
+            revert XHHEngine_InvalidPriceFeed();
+        }
+        //  convert price to uint256 and scale it to the same decimal as the collateral token
+        // the price is in 8 decimal places, so we need to scale it to 18 decimal places
+        // `price` is in 8 decimal places, so we need to scale it to 18 decimal places
+        // `usdAmount` is in 18 decimal places, so we need to divide it by 1e18 to get the price in 18 decimal places
+        return usdAmount * PRECISION_UNIT / (uint256(price) * PRICE_SCALE);
+    }
+
     function healthFactor(address userAddr) public view returns (uint256) {
         (uint256 totalCollateralValue, uint256 totalMintedAmount) = _calculateCollateralValues(userAddr);
         return _calculateHealthFactor(totalCollateralValue, totalMintedAmount);
+    }
+
+    /**
+     * @dev Liquidates `userAddr`'s position if the health factor is below the threshold.
+     *
+     * @param collateral The address of the collateral token.
+     * @param userAddr The address of the user to liquidate.
+     * @param debtToCover The amount of stablecoin tokens to cover.
+     */
+    function liquidate(address collateral, address userAddr, uint256 debtToCover)
+        public
+        checkZeroAddress(collateral)
+        checkZeroAddress(userAddr)
+        checkAmount(debtToCover)
+    {
+        // check the user stablecoin balance
+        uint256 userDebt = s_mints[userAddr];
+        if (userDebt < debtToCover) {
+            revert XHHEngine_InsufficientBalance();
+        }
+
+        //  check the user health factor
+        uint256 userStartHealthFactor = healthFactor(userAddr);
+        if (userStartHealthFactor >= LIQUIDATION_THRESHOLD) {
+            revert XHHEngine_UserHealthy();
+        }
+
+        // calculate the collateral amount to liquidate
+        uint256 tokenAmountFromDebtCovered = getTokenAmountFromUSD(collateral, debtToCover);
+
+        // calculate the bonus amount
+        uint256 bonusTokenAmount = tokenAmountFromDebtCovered * LIQUIDATION_BONUS / LIQUIDATION_PRECISION;
+
+        _redeemCollateral(collateral, userAddr, msg.sender, tokenAmountFromDebtCovered + bonusTokenAmount);
+        _burnXHH(userAddr, msg.sender, debtToCover);
+
+        // check the user health factor after liquidation is improved
+        uint256 userEndHealthFactor = healthFactor(userAddr);
+        if (userEndHealthFactor >= LIQUIDATION_THRESHOLD) {
+            revert XHHEngine_UserHealthyFactorNotImproved();
+        }
+
+        //  check the liquidated user health factor
+        _revertIfUserUnhealthy(msg.sender);
     }
 
     /**
@@ -296,7 +397,7 @@ contract XHHEngine is ReentrancyGuard {
             if (depositedAmount == 0) {
                 continue;
             }
-            uint256 tokenPrice = getCollateralTokenPrice(tokenAddr, depositedAmount);
+            uint256 tokenPrice = getUSDValue(tokenAddr, depositedAmount);
             totalCollateralValue += tokenPrice;
         }
     }
