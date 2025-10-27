@@ -13,6 +13,7 @@ contract XHHEngine {
     error XHHEngine_InsufficientBalance();
     error XHHEngine_InsufficientAllowance();
     error XHHEngine_InvalidPriceFeed();
+    error XHHEngine_UserUnhealthy();
 
     event XHHEngine_CollateralDeposited(address indexed user, address indexed token, uint256 amount);
     event XHHEngine_RedeemCollateral(address indexed user, address indexed token, uint256 amount);
@@ -90,9 +91,6 @@ contract XHHEngine {
         if (allowance < amount) {
             revert XHHEngine_InsufficientAllowance();
         }
-
-        //  TODO: check liquidity of the collateral token
-
         s_collateralDeposited[msg.sender][tokenAddr] += amount;
         emit XHHEngine_CollateralDeposited(msg.sender, tokenAddr, amount);
 
@@ -103,11 +101,32 @@ contract XHHEngine {
         }
     }
 
+    /**
+     * @dev Mints `amount` of stablecoin to the caller.
+     *
+     *
+     * Requirements:
+     *
+     * - `amount` must be greater than 0.
+     */
     function mintXHH(uint256 amount) public checkAmount(amount) {
         s_mints[msg.sender] += amount;
+
+        //  mint stablecoin can reduce the health factor of the user,so we need to check if the user is healthy after minting.
+        _revertIfUserUnhealthy(msg.sender);
         _stablecoin.mint(msg.sender, amount);
     }
 
+    /**
+     * @dev Redeems `amount` of `tokenAddr` from the contract.
+     *
+     * Emits a {RedeemCollateral} event.
+     *
+     * Requirements:
+     *
+     * - `tokenAddr` must be a valid token.
+     * - `amount` must be greater than 0.
+     */
     function redeemCollateral(address tokenAddr, uint256 amount) public checkToken(tokenAddr) checkAmount(amount) {
         // Check if the user has enough deposited collateral
         uint256 depositedAmount = s_collateralDeposited[msg.sender][tokenAddr];
@@ -122,7 +141,8 @@ contract XHHEngine {
         }
 
         s_collateralDeposited[msg.sender][tokenAddr] -= amount;
-        //  TODO: check liquidity of the collateral token
+        //  check if the user is healthy after redeeming the collateral
+        _revertIfUserUnhealthy(msg.sender);
 
         emit XHHEngine_RedeemCollateral(msg.sender, tokenAddr, amount);
         //  transfer tokens safely using the IERC20 interface
@@ -132,8 +152,20 @@ contract XHHEngine {
         }
     }
 
+    /**
+     * @dev Burns `amount` of stablecoin from the caller.
+     *
+     * Requirements:
+     *
+     * - `amount` must be greater than 0.
+     */
     function burnXHH(uint256 amount) public checkAmount(amount) {
         s_mints[msg.sender] -= amount;
+        // transfer stablecoin to the contract
+        bool success = _stablecoin.transferFrom(msg.sender, address(this), amount);
+        if (!success) {
+            revert XHHEngine_TransferFailed();
+        }
         _stablecoin.burn(amount);
     }
 
@@ -154,10 +186,6 @@ contract XHHEngine {
         // `price` is in 8 decimal places, so we need to scale it to 18 decimal places
         // `amount` is in 18 decimal places, so we need to divide it by 1e18 to get the price in 18 decimal places
         return uint256(price) * PRICE_SCALE * amount / PRECISION_UNIT;
-    }
-
-    function isUserHealthy(address userAddr) public view returns (bool) {
-        return healthFactor(userAddr) >= MIN_HEALTH_FACTOR;
     }
 
     function healthFactor(address userAddr) public view returns (uint256) {
@@ -208,6 +236,12 @@ contract XHHEngine {
             }
             uint256 tokenPrice = getCollateralTokenPrice(tokenAddr, depositedAmount);
             totalCollateralValue += tokenPrice;
+        }
+    }
+
+    function _revertIfUserUnhealthy(address userAddr) internal view {
+        if (healthFactor(userAddr) < MIN_HEALTH_FACTOR) {
+            revert XHHEngine_UserUnhealthy();
         }
     }
 }
