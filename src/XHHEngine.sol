@@ -4,6 +4,7 @@ pragma solidity ^0.8.19;
 
 import {XHHStablecoin} from "./XHHStablecoin.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 
 contract XHHEngine {
     error XHHEngine_InvalidToken();
@@ -11,6 +12,7 @@ contract XHHEngine {
     error XHHEngine_TransferFailed();
     error XHHEngine_InsufficientBalance();
     error XHHEngine_InsufficientAllowance();
+    error XHHEngine_InvalidPriceFeed();
 
     event XHHEngine_CollateralDeposited(address indexed user, address indexed token, uint256 amount);
     event XHHEngine_RedeemCollateral(address indexed user, address indexed token, uint256 amount);
@@ -21,7 +23,25 @@ contract XHHEngine {
      */
     mapping(address => mapping(address => uint256)) private s_collateralDeposited;
 
+    /**
+     * @dev Maps collateral token addresses to price feed addresses.
+     */
+    mapping(address => address) private s_collateralTokenFeeds;
+
+    /**
+     * @dev Maps user addresses to minted stablecoin amounts.
+     */
+    mapping(address => uint256) private s_mints;
+
     XHHStablecoin private immutable _stablecoin;
+
+    address[] private s_collateralTokens;
+
+    uint256 private constant PRECISION_UNIT = 1e18;
+    uint256 private constant PRICE_SCALE = 1e10;
+    uint256 private constant MIN_HEALTH_FACTOR = 1e18;
+    uint256 private constant LIQUIDATION_THRESHOLD = 50;
+    uint256 private constant LIQUIDATION_PRECISION = 100;
 
     modifier checkAmount(uint256 amount) {
         if (amount == 0) {
@@ -38,8 +58,15 @@ contract XHHEngine {
         _;
     }
 
-    constructor(address stablecoinAddress) {
+    constructor(address stablecoinAddress, address[] memory tokenAddrs, address[] memory tokenFeeds) {
+        if (tokenAddrs.length != tokenFeeds.length) {
+            revert XHHEngine_InvalidToken();
+        }
+        s_collateralTokens = tokenAddrs;
         _stablecoin = XHHStablecoin(stablecoinAddress);
+        for (uint256 i = 0; i < tokenAddrs.length; i++) {
+            s_collateralTokenFeeds[tokenAddrs[i]] = tokenFeeds[i];
+        }
     }
 
     /**
@@ -77,6 +104,7 @@ contract XHHEngine {
     }
 
     function mintXHH(uint256 amount) public checkAmount(amount) {
+        s_mints[msg.sender] += amount;
         _stablecoin.mint(msg.sender, amount);
     }
 
@@ -105,6 +133,77 @@ contract XHHEngine {
     }
 
     function burnXHH(uint256 amount) public checkAmount(amount) {
+        s_mints[msg.sender] -= amount;
         _stablecoin.burn(amount);
+    }
+
+    function getCollateralTokenPrice(address tokenAddr, uint256 amount) public view returns (uint256) {
+        address priceFeedAddr = s_collateralTokenFeeds[tokenAddr];
+        if (priceFeedAddr == address(0)) {
+            revert XHHEngine_InvalidToken();
+        }
+
+        //  get price from price feed
+        AggregatorV3Interface priceFeed = AggregatorV3Interface(priceFeedAddr);
+        (, int256 price,,,) = priceFeed.latestRoundData();
+        if (price <= 0) {
+            revert XHHEngine_InvalidPriceFeed();
+        }
+        //  convert price to uint256 and scale it to the same decimal as the collateral token
+        // the price is in 8 decimal places, so we need to scale it to 18 decimal places
+        // `price` is in 8 decimal places, so we need to scale it to 18 decimal places
+        // `amount` is in 18 decimal places, so we need to divide it by 1e18 to get the price in 18 decimal places
+        return uint256(price) * PRICE_SCALE * amount / PRECISION_UNIT;
+    }
+
+    function healthFactor(address userAddr) public view returns (uint256) {
+        (uint256 totalCollateralValue, uint256 totalMintedAmount) = _calculateCollateralValues(userAddr);
+
+        return _calculateHealthFactor(totalCollateralValue, totalMintedAmount);
+    }
+
+    /**
+     * @dev Calculates the health factor of a user.
+     *
+     * @param totalCollateralValue The total value of the collateral tokens in wei.
+     * @param totalMintedAmount The total amount of the minted stablecoin tokens in wei.
+     * @return healthFactor The health factor of the user.
+     */
+    function _calculateHealthFactor(uint256 totalCollateralValue, uint256 totalMintedAmount)
+        internal
+        pure
+        returns (uint256)
+    {
+        // if the user has no minted stablecoin tokens, the health factor is max
+        if (totalMintedAmount == 0) {
+            return type(uint256).max;
+        }
+        //
+        uint256 halfCollateralValue = totalCollateralValue * LIQUIDATION_THRESHOLD / LIQUIDATION_PRECISION;
+        return halfCollateralValue * PRECISION_UNIT / totalMintedAmount;
+    }
+
+    /**
+     * @dev Calculates the total value and amount of collateral tokens deposited by `userAddr`.
+     *
+     * @param userAddr The address of the user.
+     * @return totalCollateralValue The total value of the collateral tokens in wei.
+     * @return totalMintedAmount The total amount of the minted stablecoin tokens in wei.
+     */
+    function _calculateCollateralValues(address userAddr)
+        internal
+        view
+        returns (uint256 totalCollateralValue, uint256 totalMintedAmount)
+    {
+        totalMintedAmount = s_mints[userAddr];
+        for (uint256 i = 0; i < s_collateralTokens.length; i++) {
+            address tokenAddr = s_collateralTokens[i];
+            uint256 depositedAmount = s_collateralDeposited[userAddr][tokenAddr];
+            if (depositedAmount == 0) {
+                continue;
+            }
+            uint256 tokenPrice = getCollateralTokenPrice(tokenAddr, depositedAmount);
+            totalCollateralValue += tokenPrice;
+        }
     }
 }
