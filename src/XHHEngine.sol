@@ -128,6 +128,22 @@ contract XHHEngine {
      * - `amount` must be greater than 0.
      */
     function redeemCollateral(address tokenAddr, uint256 amount) public checkToken(tokenAddr) checkAmount(amount) {
+        _redeemCollateral(tokenAddr, amount);
+        //  check if the user is healthy after redeeming the collateral
+        _revertIfUserUnhealthy(msg.sender);
+    }
+
+    /**
+     * @dev Redeems `amount` of `tokenAddr` from the contract.
+     *
+     * Emits a {RedeemCollateral} event.
+     *
+     * Requirements:
+     *
+     * - `tokenAddr` must be a valid token.
+     * - `amount` must be greater than 0.
+     */
+    function _redeemCollateral(address tokenAddr, uint256 amount) public checkToken(tokenAddr) checkAmount(amount) {
         // Check if the user has enough deposited collateral
         uint256 depositedAmount = s_collateralDeposited[msg.sender][tokenAddr];
         if (depositedAmount < amount) {
@@ -141,9 +157,6 @@ contract XHHEngine {
         }
 
         s_collateralDeposited[msg.sender][tokenAddr] -= amount;
-        //  check if the user is healthy after redeeming the collateral
-        _revertIfUserUnhealthy(msg.sender);
-
         emit XHHEngine_RedeemCollateral(msg.sender, tokenAddr, amount);
         //  transfer tokens safely using the IERC20 interface
         bool success = IERC20(tokenAddr).transfer(msg.sender, amount);
