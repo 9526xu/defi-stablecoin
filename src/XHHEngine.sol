@@ -125,11 +125,14 @@ contract XHHEngine is ReentrancyGuard {
      * - `amount` must be greater than 0.
      */
     function mintXHH(uint256 amount) public checkAmount(amount) nonReentrant {
-        s_mints[msg.sender] += amount;
-
+        _mintXHH(msg.sender, amount);
         //  mint stablecoin can reduce the health factor of the user,so we need to check if the user is healthy after minting.
         _revertIfUserUnhealthy(msg.sender);
-        _stablecoin.mint(msg.sender, amount);
+    }
+
+    function _mintXHH(address user, uint256 amount) internal {
+        s_mints[user] += amount;
+        _stablecoin.mint(user, amount);
     }
 
     /**
@@ -168,16 +171,11 @@ contract XHHEngine is ReentrancyGuard {
         checkToken(tokenAddr)
         checkAmount(amount)
         nonReentrant
+        checkTokenBalance(tokenAddr, amount)
     {
         // Check if the user has enough deposited collateral
         uint256 depositedAmount = s_collateralDeposited[msg.sender][tokenAddr];
         if (depositedAmount < amount) {
-            revert XHHEngine_InsufficientBalance();
-        }
-
-        //  check if the contract has enough balance of the collateral token
-        uint256 contractBalance = IERC20(tokenAddr).balanceOf(address(this));
-        if (contractBalance < amount) {
             revert XHHEngine_InsufficientBalance();
         }
 
@@ -233,7 +231,6 @@ contract XHHEngine is ReentrancyGuard {
 
     function healthFactor(address userAddr) public view returns (uint256) {
         (uint256 totalCollateralValue, uint256 totalMintedAmount) = _calculateCollateralValues(userAddr);
-
         return _calculateHealthFactor(totalCollateralValue, totalMintedAmount);
     }
 
