@@ -5,8 +5,9 @@ pragma solidity ^0.8.19;
 import {XHHStablecoin} from "./XHHStablecoin.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-contract XHHEngine {
+contract XHHEngine is ReentrancyGuard {
     error XHHEngine_InvalidToken();
     error XHHEngine_AmountMustBeGreaterThan0();
     error XHHEngine_TransferFailed();
@@ -59,6 +60,24 @@ contract XHHEngine {
         _;
     }
 
+    modifier checkTokenBalance(address tokenAddr, uint256 amount) {
+        // Check if the contract has enough balance of the collateral token
+        uint256 contractBalance = IERC20(tokenAddr).balanceOf(address(this));
+        if (contractBalance < amount) {
+            revert XHHEngine_InsufficientBalance();
+        }
+        _;
+    }
+
+    modifier checkTokenAllowance(address tokenAddr, uint256 amount) {
+        // Check if the user has approved the contract to transfer the tokens
+        uint256 allowance = IERC20(tokenAddr).allowance(msg.sender, address(this));
+        if (allowance < amount) {
+            revert XHHEngine_InsufficientAllowance();
+        }
+        _;
+    }
+
     constructor(address stablecoinAddress, address[] memory tokenAddrs, address[] memory tokenFeeds) {
         if (tokenAddrs.length != tokenFeeds.length) {
             revert XHHEngine_InvalidToken();
@@ -80,20 +99,16 @@ contract XHHEngine {
      * - `tokenAddr` must be a valid token.
      * - `amount` must be greater than 0.
      */
-    function depositCollateral(address tokenAddr, uint256 amount) public checkToken(tokenAddr) checkAmount(amount) {
-        // Check if the user has enough balance
-        uint256 userBalance = IERC20(tokenAddr).balanceOf(msg.sender);
-        if (userBalance < amount) {
-            revert XHHEngine_InsufficientBalance();
-        }
-        // check if the user has approved the contract to transfer the tokens
-        uint256 allowance = IERC20(tokenAddr).allowance(msg.sender, address(this));
-        if (allowance < amount) {
-            revert XHHEngine_InsufficientAllowance();
-        }
+    function depositCollateral(address tokenAddr, uint256 amount)
+        public
+        checkToken(tokenAddr)
+        checkAmount(amount)
+        checkTokenBalance(tokenAddr, amount)
+        checkTokenAllowance(tokenAddr, amount)
+        nonReentrant
+    {
         s_collateralDeposited[msg.sender][tokenAddr] += amount;
         emit XHHEngine_CollateralDeposited(msg.sender, tokenAddr, amount);
-
         // Transfer tokens safely using the IERC20 interface
         bool success = IERC20(tokenAddr).transferFrom(msg.sender, address(this), amount);
         if (!success) {
@@ -109,7 +124,7 @@ contract XHHEngine {
      *
      * - `amount` must be greater than 0.
      */
-    function mintXHH(uint256 amount) public checkAmount(amount) {
+    function mintXHH(uint256 amount) public checkAmount(amount) nonReentrant {
         s_mints[msg.sender] += amount;
 
         //  mint stablecoin can reduce the health factor of the user,so we need to check if the user is healthy after minting.
@@ -127,7 +142,12 @@ contract XHHEngine {
      * - `tokenAddr` must be a valid token.
      * - `amount` must be greater than 0.
      */
-    function redeemCollateral(address tokenAddr, uint256 amount) public checkToken(tokenAddr) checkAmount(amount) {
+    function redeemCollateral(address tokenAddr, uint256 amount)
+        public
+        checkToken(tokenAddr)
+        checkAmount(amount)
+        nonReentrant
+    {
         _redeemCollateral(tokenAddr, amount);
         //  check if the user is healthy after redeeming the collateral
         _revertIfUserUnhealthy(msg.sender);
@@ -143,7 +163,12 @@ contract XHHEngine {
      * - `tokenAddr` must be a valid token.
      * - `amount` must be greater than 0.
      */
-    function _redeemCollateral(address tokenAddr, uint256 amount) public checkToken(tokenAddr) checkAmount(amount) {
+    function _redeemCollateral(address tokenAddr, uint256 amount)
+        public
+        checkToken(tokenAddr)
+        checkAmount(amount)
+        nonReentrant
+    {
         // Check if the user has enough deposited collateral
         uint256 depositedAmount = s_collateralDeposited[msg.sender][tokenAddr];
         if (depositedAmount < amount) {
@@ -177,7 +202,7 @@ contract XHHEngine {
      *
      * - `amount` must be greater than 0.
      */
-    function burnXHH(uint256 amount) public checkAmount(amount) {
+    function burnXHH(uint256 amount) public checkAmount(amount) nonReentrant {
         s_mints[msg.sender] -= amount;
         // transfer stablecoin to the contract
         bool success = _stablecoin.transferFrom(msg.sender, address(this), amount);
