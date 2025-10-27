@@ -168,6 +168,11 @@ contract XHHEngine {
     /**
      * @dev Burns `amount` of stablecoin from the caller.
      *
+     * 1. transfer stablecoin from the caller to the contract
+     * 2. burn stablecoin from the contract
+     *
+     * because only the owner (XHHEngine) can burn stablecoin, so we need to check if the caller is the owner.
+     *
      * Requirements:
      *
      * - `amount` must be greater than 0.
