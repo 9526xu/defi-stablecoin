@@ -156,6 +156,10 @@ contract XHHEngine {
         return uint256(price) * PRICE_SCALE * amount / PRECISION_UNIT;
     }
 
+    function isUserHealthy(address userAddr) public view returns (bool) {
+        return healthFactor(userAddr) >= MIN_HEALTH_FACTOR;
+    }
+
     function healthFactor(address userAddr) public view returns (uint256) {
         (uint256 totalCollateralValue, uint256 totalMintedAmount) = _calculateCollateralValues(userAddr);
 
