@@ -410,4 +410,16 @@ contract XHHEngine is ReentrancyGuard {
     function getCollateralAmount(address userAddr, address tokenAddr) public view returns (uint256) {
         return s_collateralDeposited[userAddr][tokenAddr];
     }
+
+    function getMintAmount(address userAddr) public view returns (uint256) {
+        return s_mints[userAddr];
+    }
+
+    function getPrecisionUnit() public pure returns (uint256) {
+        return PRECISION_UNIT;
+    }
+
+    function getPriceFeed(address tokenAddr) public view returns (AggregatorV3Interface) {
+        return AggregatorV3Interface(s_collateralTokenFeeds[tokenAddr]);
+    }
 }

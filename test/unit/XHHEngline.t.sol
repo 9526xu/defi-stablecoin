@@ -103,4 +103,70 @@ contract XHHEngineTest is Test {
         vm.prank(alice);
         engine.depositCollateral(tokenAddr, amount);
     }
+
+    function test_mintXHHIsSuccess() public {
+        address tokenAddr = helperConfig.getNetworkConfig().collateralTokens[0];
+        uint256 amount = 100;
+
+        ERC20Mock(tokenAddr).mint(alice, amount);
+        // approve engine to spend alice's token
+        vm.prank(alice);
+        ERC20Mock(tokenAddr).approve(address(engine), amount);
+
+        vm.prank(alice);
+        engine.depositCollateral(tokenAddr, amount);
+
+        uint256 mintAmount = 10;
+        vm.prank(alice);
+        engine.mintXHH(mintAmount);
+
+        assertEq(engine.getMintAmount(alice), mintAmount);
+    }
+
+    function test_mintXHHWhenAmountIs0() public {
+        uint256 mintAmount = 0;
+        vm.expectRevert(XHHEngine.XHHEngine_AmountMustBeGreaterThan0.selector);
+        vm.prank(alice);
+        engine.mintXHH(mintAmount);
+    }
+
+    function test_mintXHHWhenUserUnhealthy() public {
+        address tokenAddr = helperConfig.getNetworkConfig().collateralTokens[0];
+        uint256 amount = 10;
+
+        ERC20Mock(tokenAddr).mint(alice, amount);
+        // approve engine to spend alice's token
+        vm.prank(alice);
+        ERC20Mock(tokenAddr).approve(address(engine), amount);
+
+        vm.prank(alice);
+        engine.depositCollateral(tokenAddr, amount);
+
+        //  get price of weth
+        (, int256 price,,,) = engine.getPriceFeed(tokenAddr).latestRoundData();
+
+        uint256 mintAmount = (amount * (uint256(price) * engine.getPrecisionUnit())) / engine.getPrecisionUnit() + 1;
+        console.log("mintAmount: ", mintAmount);
+
+        vm.expectRevert(XHHEngine.XHHEngine_UserUnhealthy.selector);
+        vm.prank(alice);
+        engine.mintXHH(mintAmount);
+    }
+
+    function test_depositCollateralAndMintXHHIsSuccess() public {
+        address tokenAddr = helperConfig.getNetworkConfig().collateralTokens[0];
+        uint256 collateralAmount = 100;
+        uint256 mintAmount = 10;
+
+        ERC20Mock(tokenAddr).mint(alice, collateralAmount);
+        // approve engine to spend alice's token
+        vm.prank(alice);
+        ERC20Mock(tokenAddr).approve(address(engine), collateralAmount);
+
+        vm.prank(alice);
+        engine.depositCollateralAndMintXHH(tokenAddr, collateralAmount, mintAmount);
+
+        assertEq(engine.getCollateralAmount(alice, tokenAddr), collateralAmount);
+        assertEq(engine.getMintAmount(alice), mintAmount);
+    }
 }
