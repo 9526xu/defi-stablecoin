@@ -9,8 +9,6 @@ import {Script} from "forge-std/Script.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 
 contract HelperConfig is Script {
-
-
     struct NetworkConfig {
         address[] collateralTokens;
         address[] collateralTokenPriceFeeds;

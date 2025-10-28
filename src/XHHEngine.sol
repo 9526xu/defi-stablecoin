@@ -93,8 +93,8 @@ contract XHHEngine is ReentrancyGuard {
         if (tokenAddrs.length != tokenFeeds.length) {
             revert XHHEngine_InvalidFeeds();
         }
-        s_collateralTokens = tokenAddrs;
         _stablecoin = XHHStablecoin(stablecoinAddress);
+        s_collateralTokens = tokenAddrs;
         for (uint256 i = 0; i < tokenAddrs.length; i++) {
             s_collateralTokenFeeds[tokenAddrs[i]] = tokenFeeds[i];
         }
