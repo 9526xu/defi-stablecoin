@@ -49,4 +49,8 @@ contract HelperConfig is Script {
 
         return NetworkConfig({collateralTokens: collateralTokens, collateralTokenPriceFeeds: collateralTokenPriceFeeds});
     }
+
+    function getNetworkConfig() public view returns (NetworkConfig memory) {
+        return networkConfig;
+    }
 }

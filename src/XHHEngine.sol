@@ -8,7 +8,7 @@ import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/shared/interf
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 contract XHHEngine is ReentrancyGuard {
-    error XHHEngine_InvalidAddress(address tokenAddr);
+    error XHHEngine_InvalidAddress();
     error XHHEngine_AmountMustBeGreaterThan0();
     error XHHEngine_TransferFailed();
     error XHHEngine_InsufficientBalance();
@@ -58,7 +58,7 @@ contract XHHEngine is ReentrancyGuard {
 
     modifier checkZeroAddress(address tokenAddr) {
         if (tokenAddr == address(0)) {
-            revert XHHEngine_InvalidAddress(tokenAddr);
+            revert XHHEngine_InvalidAddress();
         }
 
         _;
@@ -66,7 +66,7 @@ contract XHHEngine is ReentrancyGuard {
 
     modifier checkTokenBalance(address tokenAddr, uint256 amount) {
         // Check if the contract has enough balance of the collateral token
-        uint256 contractBalance = IERC20(tokenAddr).balanceOf(address(this));
+        uint256 contractBalance = IERC20(tokenAddr).balanceOf(msg.sender);
         if (contractBalance < amount) {
             revert XHHEngine_InsufficientBalance();
         }
@@ -84,7 +84,7 @@ contract XHHEngine is ReentrancyGuard {
 
     modifier checkPriceFeedAddress(address tokenAddr) {
         if (s_collateralTokenFeeds[tokenAddr] == address(0)) {
-            revert XHHEngine_InvalidAddress(tokenAddr);
+            revert XHHEngine_InvalidPriceFeed();
         }
         _;
     }
@@ -126,7 +126,6 @@ contract XHHEngine is ReentrancyGuard {
         public
         checkZeroAddress(tokenAddr)
         checkAmount(amount)
-        checkTokenBalance(tokenAddr, amount)
         checkTokenAllowance(tokenAddr, amount)
         nonReentrant
     {
@@ -406,5 +405,9 @@ contract XHHEngine is ReentrancyGuard {
         if (healthFactor(userAddr) < MIN_HEALTH_FACTOR) {
             revert XHHEngine_UserUnhealthy();
         }
+    }
+
+    function getCollateralAmount(address userAddr, address tokenAddr) public view returns (uint256) {
+        return s_collateralDeposited[userAddr][tokenAddr];
     }
 }
