@@ -9,13 +9,13 @@ import {XHHStablecoin} from "../src/XHHStablecoin.sol";
 import {XHHEngine} from "../src/XHHEngine.sol";
 
 contract Deploy is Script {
-    function run() external returns (XHHEngine engine) {
-        HelperConfig helperConfig = new HelperConfig();
+    function run() external returns (XHHStablecoin stablecoin, XHHEngine engine, HelperConfig helperConfig) {
+        helperConfig = new HelperConfig();
         HelperConfig.NetworkConfig memory networkConfig = helperConfig.getOrCreateAnvilEthConfig();
 
         vm.startBroadcast();
         //  deploy stablecoin
-        XHHStablecoin stablecoin = new XHHStablecoin();
+        stablecoin = new XHHStablecoin();
 
         // deploy engline
         engine =
