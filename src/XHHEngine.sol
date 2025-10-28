@@ -330,7 +330,7 @@ contract XHHEngine is ReentrancyGuard {
 
         //  check the user health factor
         uint256 userStartHealthFactor = healthFactor(userAddr);
-        if (userStartHealthFactor >= LIQUIDATION_THRESHOLD) {
+        if (userStartHealthFactor >= MIN_HEALTH_FACTOR) {
             revert XHHEngine_UserHealthy();
         }
 
@@ -345,12 +345,20 @@ contract XHHEngine is ReentrancyGuard {
 
         // check the user health factor after liquidation is improved
         uint256 userEndHealthFactor = healthFactor(userAddr);
-        if (userEndHealthFactor >= LIQUIDATION_THRESHOLD) {
+        if (userEndHealthFactor <= userStartHealthFactor) {
             revert XHHEngine_UserHealthyFactorNotImproved();
         }
 
         //  check the liquidated user health factor
         _revertIfUserUnhealthy(msg.sender);
+    }
+
+    function calculateHealthFactor(uint256 totalCollateralValue, uint256 totalMintedAmount) 
+        external
+        pure
+        returns (uint256)
+    {
+        return _calculateHealthFactor(totalCollateralValue, totalMintedAmount);
     }
 
     /**
@@ -418,5 +426,13 @@ contract XHHEngine is ReentrancyGuard {
 
     function getPriceFeed(address tokenAddr) public view returns (AggregatorV3Interface) {
         return AggregatorV3Interface(s_collateralTokenFeeds[tokenAddr]);
+    }
+
+    function getLiquidationBonus() public pure returns (uint256) {
+        return LIQUIDATION_BONUS;
+    }
+
+    function getLiquidationPrecision() public pure returns (uint256) {
+        return LIQUIDATION_PRECISION;
     }
 }

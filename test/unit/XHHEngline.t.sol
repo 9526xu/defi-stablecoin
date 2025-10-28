@@ -9,6 +9,7 @@ import {HelperConfig} from "../../script/HelperConfig.sol";
 import {Deploy} from "../../script/Deploy.s.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 
 contract XHHEngineTest is Test {
     XHHStablecoin stablecoin;
@@ -365,5 +366,77 @@ contract XHHEngineTest is Test {
 
         vm.expectRevert(XHHEngine.XHHEngine_InvalidPriceFeed.selector);
         engine.getTokenAmountFromUSD(tokenAddr, usdAmount);
+    }
+
+    // function test_liquidate_Success() public {
+
+    // }
+
+    function test_liquidate_RevertWhenUserIsHealthy() public {
+        address tokenAddr = helperConfig.getNetworkConfig().collateralTokens[0];
+        uint256 collateralAmount = 100;
+
+        ERC20Mock(tokenAddr).mint(alice, collateralAmount);
+        vm.prank(alice);
+        ERC20Mock(tokenAddr).approve(address(engine), collateralAmount);
+
+        vm.prank(alice);
+        engine.depositCollateral(tokenAddr, collateralAmount);
+
+        uint256 mintAmount = 10;
+        vm.prank(alice);
+        engine.mintXHH(mintAmount);
+
+        address liquidator = makeAddr("liquidator");
+        uint256 debtToCover = 10;
+
+        vm.prank(liquidator);
+        vm.expectRevert(XHHEngine.XHHEngine_UserHealthy.selector);
+        engine.liquidate(tokenAddr, alice, debtToCover);
+    }
+
+    function test_liquidate_RevertWhenCollateralIsZeroAddress() public {
+        address tokenAddr = address(0);
+        uint256 debtToCover = 10;
+        vm.expectRevert(XHHEngine.XHHEngine_InvalidAddress.selector);
+        engine.liquidate(tokenAddr, alice, debtToCover);
+    }
+
+    function test_liquidate_RevertWhenUserIsZeroAddress() public {
+        address tokenAddr = helperConfig.getNetworkConfig().collateralTokens[0];
+        address user = address(0);
+        uint256 debtToCover = 10;
+        vm.expectRevert(XHHEngine.XHHEngine_InvalidAddress.selector);
+        engine.liquidate(tokenAddr, user, debtToCover);
+    }
+
+    function test_liquidate_RevertWhenDebtToCoverIsZero() public {
+        address tokenAddr = helperConfig.getNetworkConfig().collateralTokens[0];
+        uint256 debtToCover = 0;
+        vm.expectRevert(XHHEngine.XHHEngine_AmountMustBeGreaterThan0.selector);
+        engine.liquidate(tokenAddr, alice, debtToCover);
+    }
+
+    function test_liquidate_RevertWhenDebtToCoverIsMoreThanUserDebt() public {
+        address tokenAddr = helperConfig.getNetworkConfig().collateralTokens[0];
+        uint256 collateralAmount = 10;
+
+        ERC20Mock(tokenAddr).mint(alice, collateralAmount);
+        vm.prank(alice);
+        ERC20Mock(tokenAddr).approve(address(engine), collateralAmount);
+
+        vm.prank(alice);
+        engine.depositCollateral(tokenAddr, collateralAmount);
+
+        uint256 mintAmount = 1000;
+        vm.prank(alice);
+        engine.mintXHH(mintAmount);
+
+        address liquidator = makeAddr("liquidator");
+        uint256 debtToCover = 1001;
+
+        vm.prank(liquidator);
+        vm.expectRevert(XHHEngine.XHHEngine_InsufficientBalance.selector);
+        engine.liquidate(tokenAddr, alice, debtToCover);
     }
 }
