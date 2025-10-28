@@ -169,4 +169,201 @@ contract XHHEngineTest is Test {
         assertEq(engine.getCollateralAmount(alice, tokenAddr), collateralAmount);
         assertEq(engine.getMintAmount(alice), mintAmount);
     }
+
+    function test_redeemCollateralIsSuccess() public {
+        address tokenAddr = helperConfig.getNetworkConfig().collateralTokens[0];
+        uint256 collateralAmount = 100;
+
+        ERC20Mock(tokenAddr).mint(alice, collateralAmount);
+        // approve engine to spend alice's token
+        vm.prank(alice);
+        ERC20Mock(tokenAddr).approve(address(engine), collateralAmount);
+
+        vm.prank(alice);
+        engine.depositCollateral(tokenAddr, collateralAmount);
+
+        uint256 redeemAmount = 50;
+        vm.prank(alice);
+        engine.redeemCollateral(tokenAddr, redeemAmount);
+
+        assertEq(engine.getCollateralAmount(alice, tokenAddr), collateralAmount - redeemAmount);
+    }
+
+    function test_redeemCollateralWhenInsufficientBalance() public {
+        address tokenAddr = helperConfig.getNetworkConfig().collateralTokens[0];
+        uint256 collateralAmount = 100;
+
+        ERC20Mock(tokenAddr).mint(alice, collateralAmount);
+        // approve engine to spend alice's token
+        vm.prank(alice);
+        ERC20Mock(tokenAddr).approve(address(engine), collateralAmount);
+
+        vm.prank(alice);
+        engine.depositCollateral(tokenAddr, collateralAmount);
+
+        uint256 redeemAmount = 150;
+        vm.prank(alice);
+        vm.expectRevert(XHHEngine.XHHEngine_InsufficientBalance.selector);
+        engine.redeemCollateral(tokenAddr, redeemAmount);
+    }
+
+    function test_redeemCollateralWhenAmountIs0() public {
+        address tokenAddr = helperConfig.getNetworkConfig().collateralTokens[0];
+        uint256 redeemAmount = 0;
+        vm.prank(alice);
+        vm.expectRevert(XHHEngine.XHHEngine_AmountMustBeGreaterThan0.selector);
+        engine.redeemCollateral(tokenAddr, redeemAmount);
+    }
+
+    function test_redeemCollateralWhenTokenAddrIs0() public {
+        address tokenAddr = address(0);
+        uint256 redeemAmount = 100;
+        vm.prank(alice);
+        vm.expectRevert(XHHEngine.XHHEngine_InvalidAddress.selector);
+        engine.redeemCollateral(tokenAddr, redeemAmount);
+    }
+
+    function test_redeemCollateralWhenTransferFailed() public {
+        address tokenAddr = helperConfig.getNetworkConfig().collateralTokens[0];
+        uint256 collateralAmount = 100;
+
+        ERC20Mock(tokenAddr).mint(alice, collateralAmount);
+        // approve engine to spend alice's token
+        vm.prank(alice);
+        ERC20Mock(tokenAddr).approve(address(engine), collateralAmount);
+
+        vm.prank(alice);
+        engine.depositCollateral(tokenAddr, collateralAmount);
+
+        uint256 redeemAmount = 50;
+        vm.mockCall(tokenAddr, abi.encodeWithSelector(IERC20.transfer.selector, alice, redeemAmount), abi.encode(false));
+
+        vm.prank(alice);
+        vm.expectRevert(XHHEngine.XHHEngine_TransferFailed.selector);
+        engine.redeemCollateral(tokenAddr, redeemAmount);
+    }
+
+    function test_burnXHHIsSuccess() public {
+        address tokenAddr = helperConfig.getNetworkConfig().collateralTokens[0];
+        uint256 collateralAmount = 100;
+        uint256 mintAmount = 10;
+
+        ERC20Mock(tokenAddr).mint(alice, collateralAmount);
+        // approve engine to spend alice's token
+        vm.prank(alice);
+        ERC20Mock(tokenAddr).approve(address(engine), collateralAmount);
+
+        vm.prank(alice);
+        engine.depositCollateralAndMintXHH(tokenAddr, collateralAmount, mintAmount);
+
+        uint256 burnAmount = 5;
+        vm.prank(alice);
+        stablecoin.approve(address(engine), burnAmount);
+
+        vm.prank(alice);
+        engine.burnXHH(burnAmount);
+
+        assertEq(engine.getMintAmount(alice), mintAmount - burnAmount);
+    }
+
+    function test_burnXHHWhenAmountIs0() public {
+        uint256 burnAmount = 0;
+        vm.prank(alice);
+        vm.expectRevert(XHHEngine.XHHEngine_AmountMustBeGreaterThan0.selector);
+        engine.burnXHH(burnAmount);
+    }
+
+    function test_burnXHHWhenInsufficientBalance() public {
+        uint256 burnAmount = 10;
+        vm.prank(alice);
+        vm.expectRevert();
+        engine.burnXHH(burnAmount);
+    }
+
+    function test_getUSDValue_Success() public {
+        address tokenAddr = helperConfig.getNetworkConfig().collateralTokens[0];
+        uint256 amount = 100;
+        (, int256 price,,,) = engine.getPriceFeed(tokenAddr).latestRoundData();
+
+        uint256 expectedUsdValue = uint256(price) * engine.getPRICE_SCALE() * amount / engine.getPrecisionUnit();
+        uint256 actualUsdValue = engine.getUSDValue(tokenAddr, amount);
+
+        assertEq(actualUsdValue, expectedUsdValue);
+    }
+
+    function test_getUSDValue_InvalidPrice() public {
+        address tokenAddr = helperConfig.getNetworkConfig().collateralTokens[0];
+        uint256 amount = 100;
+
+        // mock price feed to return 0
+        vm.mockCall(
+            helperConfig.getNetworkConfig().collateralTokenPriceFeeds[0],
+            abi.encodeWithSelector(engine.getPriceFeed(tokenAddr).latestRoundData.selector),
+            abi.encode(0, 0, 0, 0, 0)
+        );
+
+        vm.expectRevert(XHHEngine.XHHEngine_InvalidPriceFeed.selector);
+        engine.getUSDValue(tokenAddr, amount);
+    }
+
+    function test_getUSDValue_InvalidToken() public {
+        address tokenAddr = address(0);
+        uint256 amount = 100;
+        vm.expectRevert(XHHEngine.XHHEngine_InvalidAddress.selector);
+        engine.getUSDValue(tokenAddr, amount);
+    }
+
+    function test_getUSDValue_ZeroAmount() public {
+        address tokenAddr = helperConfig.getNetworkConfig().collateralTokens[0];
+        uint256 amount = 0;
+        vm.expectRevert(XHHEngine.XHHEngine_AmountMustBeGreaterThan0.selector);
+        engine.getUSDValue(tokenAddr, amount);
+    }
+
+    function test_getTokenAmountFromUSD_Success() public {
+        address tokenAddr = helperConfig.getNetworkConfig().collateralTokens[0];
+        uint256 usdAmount = 100;
+        (, int256 price,,,) = engine.getPriceFeed(tokenAddr).latestRoundData();
+
+        uint256 expectedTokenAmount = usdAmount * engine.getPrecisionUnit() / (uint256(price) * engine.getPRICE_SCALE());
+        uint256 actualTokenAmount = engine.getTokenAmountFromUSD(tokenAddr, usdAmount);
+
+        assertEq(actualTokenAmount, expectedTokenAmount);
+    }
+
+    function test_getTokenAmountFromUSD_InvalidTokenAddress() public {
+        address tokenAddr = address(0);
+        uint256 usdAmount = 100;
+        vm.expectRevert(XHHEngine.XHHEngine_InvalidAddress.selector);
+        engine.getTokenAmountFromUSD(tokenAddr, usdAmount);
+    }
+
+    function test_getTokenAmountFromUSD_UnlistedToken() public {
+        address tokenAddr = makeAddr("unlistedToken");
+        uint256 usdAmount = 100;
+        vm.expectRevert(XHHEngine.XHHEngine_InvalidPriceFeed.selector);
+        engine.getTokenAmountFromUSD(tokenAddr, usdAmount);
+    }
+
+    function test_getTokenAmountFromUSD_ZeroUsdAmount() public {
+        address tokenAddr = helperConfig.getNetworkConfig().collateralTokens[0];
+        uint256 usdAmount = 0;
+        vm.expectRevert(XHHEngine.XHHEngine_AmountMustBeGreaterThan0.selector);
+        engine.getTokenAmountFromUSD(tokenAddr, usdAmount);
+    }
+
+    function test_getTokenAmountFromUSD_InvalidPrice() public {
+        address tokenAddr = helperConfig.getNetworkConfig().collateralTokens[0];
+        uint256 usdAmount = 100;
+
+        // mock price feed to return 0
+        vm.mockCall(
+            helperConfig.getNetworkConfig().collateralTokenPriceFeeds[0],
+            abi.encodeWithSelector(engine.getPriceFeed(tokenAddr).latestRoundData.selector),
+            abi.encode(0, 0, 0, 0, 0)
+        );
+
+        vm.expectRevert(XHHEngine.XHHEngine_InvalidPriceFeed.selector);
+        engine.getTokenAmountFromUSD(tokenAddr, usdAmount);
+    }
 }

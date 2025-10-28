@@ -200,15 +200,7 @@ contract XHHEngine is ReentrancyGuard {
      * - `tokenAddr` must be a valid token.
      * - `amount` must be greater than 0.
      */
-    function _redeemCollateral(address tokenAddr, address from, address to, uint256 amount)
-        public
-        checkZeroAddress(tokenAddr)
-        checkAmount(amount)
-        nonReentrant
-        checkTokenBalance(tokenAddr, amount)
-        checkZeroAddress(from)
-        checkZeroAddress(to)
-    {
+    function _redeemCollateral(address tokenAddr, address from, address to, uint256 amount) internal {
         // Check if the user has enough deposited collateral
         uint256 depositedAmount = s_collateralDeposited[from][tokenAddr];
         if (depositedAmount < amount) {
@@ -257,6 +249,7 @@ contract XHHEngine is ReentrancyGuard {
     function getUSDValue(address tokenAddr, uint256 amount)
         public
         view
+        checkZeroAddress(tokenAddr)
         checkAmount(amount)
         checkPriceFeedAddress(tokenAddr)
         returns (uint256)
@@ -310,6 +303,10 @@ contract XHHEngine is ReentrancyGuard {
     function healthFactor(address userAddr) public view returns (uint256) {
         (uint256 totalCollateralValue, uint256 totalMintedAmount) = _calculateCollateralValues(userAddr);
         return _calculateHealthFactor(totalCollateralValue, totalMintedAmount);
+    }
+
+    function getPRICE_SCALE() public pure returns (uint256) {
+        return PRICE_SCALE;
     }
 
     /**
