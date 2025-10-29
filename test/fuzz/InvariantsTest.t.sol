@@ -33,8 +33,6 @@ contract InvariantsTest is StdInvariant, Test {
         console.log("totalValue:", totalValue);
         console.log("totalSupply:", totalSupply);
 
-        console.log("totalValue:", totalValue);
-        console.log("totalSupply:", totalSupply);
         assert(totalValue >= totalSupply);
     }
 }
