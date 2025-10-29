@@ -250,10 +250,13 @@ contract XHHEngine is ReentrancyGuard {
         public
         view
         checkZeroAddress(tokenAddr)
-        checkAmount(amount)
         checkPriceFeedAddress(tokenAddr)
         returns (uint256)
     {
+        if (amount == 0) {
+            return 0;
+        }
+
         address priceFeedAddr = s_collateralTokenFeeds[tokenAddr];
 
         //  get price from price feed
