@@ -10,6 +10,7 @@ import {Deploy} from "../../script/Deploy.s.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
+import {MockV3Aggregator} from "@chainlink/contracts/src/v0.8/tests/MockV3Aggregator.sol";
 
 contract XHHEngineTest is Test {
     XHHStablecoin stablecoin;
@@ -18,11 +19,14 @@ contract XHHEngineTest is Test {
 
     address alice;
 
+    address liquidator;
+
     function setUp() public {
         Deploy deploy = new Deploy();
         (stablecoin, engine, helperConfig) = deploy.run();
 
         alice = makeAddr("alice");
+        liquidator = makeAddr("liquidator");
     }
 
     function test_depositCollateralIsZeroTokenAddress() public {
@@ -368,9 +372,80 @@ contract XHHEngineTest is Test {
         engine.getTokenAmountFromUSD(tokenAddr, usdAmount);
     }
 
-    // function test_liquidate_Success() public {
+    function test_liquidate_Success() public {
+        address tokenAddr = helperConfig.getNetworkConfig().collateralTokens[0];
+        uint256 collateralAmount = 10 ether;
+        uint256 mintAmount = 8000 ether;
 
-    // }
+        //  alice deposit collateral
+        vm.startPrank(alice);
+        ERC20Mock(tokenAddr).mint(alice, collateralAmount);
+        ERC20Mock(tokenAddr).approve(address(engine), collateralAmount);
+
+        engine.depositCollateralAndMintXHH(tokenAddr, collateralAmount, mintAmount);
+        vm.stopPrank();
+
+        // collateral value  decrease
+        MockV3Aggregator wethPriceFeed = MockV3Aggregator(helperConfig.getNetworkConfig().collateralTokenPriceFeeds[0]);
+        int256 wethPrice = 1500e8;
+        wethPriceFeed.updateAnswer(wethPrice);
+
+        //  liquidator deposit collateral
+        address liquidator = makeAddr("liquidator");
+        uint256 liquidationCollateralAmount = 100 ether;
+        uint256 liquidationAmount = 8000 ether;
+        vm.startPrank(liquidator);
+        ERC20Mock(tokenAddr).mint(liquidator, liquidationCollateralAmount);
+        ERC20Mock(tokenAddr).approve(address(engine), liquidationCollateralAmount);
+
+        engine.depositCollateralAndMintXHH(tokenAddr, liquidationCollateralAmount, liquidationAmount);
+        vm.stopPrank();
+
+        (uint256 aliceTotalCollateralValue, uint256 aliceTotalMintedAmount) = engine.calculateCollateralValues(alice);
+
+        console.log("alice total collateral value:", aliceTotalCollateralValue);
+        console.log("alice total minted amount:", aliceTotalMintedAmount);
+        console.log("alice healthFactor:", engine.checkHealthFactor(alice));
+
+        (uint256 liquidatorTotalCollateralValue, uint256 liquidatorTotalMintedAmount) =
+            engine.calculateCollateralValues(liquidator);
+        console.log("liquidator total collateral value:", liquidatorTotalCollateralValue);
+        console.log("liquidator total minted amount:", liquidatorTotalMintedAmount);
+        console.log("liquidator healthFactor:", engine.checkHealthFactor(liquidator));
+
+        //  start liquidate
+        uint256 debtToCover = 4000 ether;
+
+        // calculate the collateral amount to liquidate
+        uint256 tokenAmountFromDebtCovered = engine.getTokenAmountFromUSD(tokenAddr, debtToCover);
+
+        // calculate the bonus amount
+        uint256 bonusTokenAmount =
+            tokenAmountFromDebtCovered * engine.getLiquidationBonus() / engine.getLiquidationPrecision();
+
+        vm.startPrank(liquidator);
+        // approve the engine to transfer the collateral token
+        stablecoin.approve(address(engine), liquidationAmount);
+        engine.liquidate(tokenAddr, alice, debtToCover);
+        vm.stopPrank();
+
+        // assert  liquidato
+        assertEq(stablecoin.balanceOf(liquidator), liquidationAmount - debtToCover);
+        // assert liquidator get the collateral token
+        assertEq(ERC20Mock(tokenAddr).balanceOf(liquidator), tokenAmountFromDebtCovered + bonusTokenAmount);
+        // assert liquidator collateral value not decrease
+        assertEq(engine.getCollateralAmount(liquidator, tokenAddr), liquidationCollateralAmount);
+
+        // assert alice stablecoin balance not decrease
+        assertEq(stablecoin.balanceOf(alice), mintAmount);
+
+        assertEq(ERC20Mock(tokenAddr).balanceOf(alice), 0);
+        // assert alice collateral value  decrease
+        assertEq(
+            engine.getCollateralAmount(alice, tokenAddr),
+            collateralAmount - tokenAmountFromDebtCovered - bonusTokenAmount
+        );
+    }
 
     function test_liquidate_RevertWhenUserIsHealthy() public {
         address tokenAddr = helperConfig.getNetworkConfig().collateralTokens[0];

@@ -14,6 +14,9 @@ contract HelperConfig is Script {
         address[] collateralTokenPriceFeeds;
     }
 
+    int256 internal constant WETH_INIT_AMOUNT = 2000e8;
+    int256 internal constant WBTC_INIT_AMOUNT = 4000e8;
+
     NetworkConfig internal networkConfig;
 
     constructor() {
@@ -31,11 +34,11 @@ contract HelperConfig is Script {
 
         vm.startBroadcast();
         // Deploy a mock price feed for WETH
-        MockV3Aggregator wethPriceFeed = new MockV3Aggregator(8, 200000000000);
+        MockV3Aggregator wethPriceFeed = new MockV3Aggregator(8, WETH_INIT_AMOUNT);
         ERC20Mock wethMock = new ERC20Mock();
 
         // Deploy a mock price feed for WBTC
-        MockV3Aggregator wbtcPriceFeed = new MockV3Aggregator(8, 500000000000);
+        MockV3Aggregator wbtcPriceFeed = new MockV3Aggregator(8, WBTC_INIT_AMOUNT);
         ERC20Mock wbtcMock = new ERC20Mock();
         vm.stopBroadcast();
 
@@ -52,5 +55,13 @@ contract HelperConfig is Script {
 
     function getNetworkConfig() public view returns (NetworkConfig memory) {
         return networkConfig;
+    }
+
+    function getWethInitAmount() public pure returns (int256) {
+        return WETH_INIT_AMOUNT;
+    }
+
+    function getWbtcInitAmount() public pure returns (int256) {
+        return WBTC_INIT_AMOUNT;
     }
 }

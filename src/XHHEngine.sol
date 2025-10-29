@@ -353,7 +353,7 @@ contract XHHEngine is ReentrancyGuard {
         _revertIfUserUnhealthy(msg.sender);
     }
 
-    function calculateHealthFactor(uint256 totalCollateralValue, uint256 totalMintedAmount) 
+    function calculateHealthFactor(uint256 totalCollateralValue, uint256 totalMintedAmount)
         external
         pure
         returns (uint256)
@@ -382,6 +382,14 @@ contract XHHEngine is ReentrancyGuard {
         return halfCollateralValue * PRECISION_UNIT / totalMintedAmount;
     }
 
+    function calculateCollateralValues(address userAddr)
+        external
+        view
+        returns (uint256 totalCollateralValue, uint256 totalMintedAmount)
+    {
+        return _calculateCollateralValues(userAddr);
+    }
+
     /**
      * @dev Calculates the total value and amount of collateral tokens deposited by `userAddr`.
      *
@@ -404,6 +412,10 @@ contract XHHEngine is ReentrancyGuard {
             uint256 tokenPrice = getUSDValue(tokenAddr, depositedAmount);
             totalCollateralValue += tokenPrice;
         }
+    }
+
+    function checkHealthFactor(address userAddr) public view returns (bool) {
+        return healthFactor(userAddr) >= MIN_HEALTH_FACTOR;
     }
 
     function _revertIfUserUnhealthy(address userAddr) internal view {
