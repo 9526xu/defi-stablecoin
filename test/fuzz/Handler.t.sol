@@ -28,6 +28,19 @@ contract Handler is Test {
         vm.stopPrank();
     }
 
+    function redeemCollateral(uint256 _seed, uint256 _amount) public {
+        address collateralToken = getRandomAddress(_seed);
+        uint256 collateralAmount = engine.getCollateralAmount(msg.sender, collateralToken);
+
+        _amount = bound(_amount, 0, collateralAmount);
+        if (_amount == 0) {
+            return;
+        }
+        vm.startPrank(msg.sender);
+        engine.redeemCollateral(collateralToken, _amount);
+        vm.stopPrank();
+    }
+
     function getRandomAddress(uint256 _seed) public view returns (address) {
         address[] memory collateralTokens = engine.getCollateralTokens();
         address collateralToken = collateralTokens[_seed % collateralTokens.length];
