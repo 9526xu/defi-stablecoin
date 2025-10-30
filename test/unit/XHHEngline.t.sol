@@ -148,7 +148,7 @@ contract XHHEngineTest is Test {
         engine.depositCollateral(tokenAddr, amount);
 
         //  get price of weth
-        (, int256 price,,,) = engine.getPriceFeed(tokenAddr).latestRoundData();
+        (, int256 price,,,) = MockV3Aggregator(engine.getPriceFeed(tokenAddr)).latestRoundData();
 
         uint256 mintAmount = (amount * (uint256(price) * engine.getPrecisionUnit())) / engine.getPrecisionUnit() + 1;
         console.log("mintAmount: ", mintAmount);
@@ -288,7 +288,7 @@ contract XHHEngineTest is Test {
     function test_getUSDValue_Success() public {
         address tokenAddr = helperConfig.getNetworkConfig().collateralTokens[0];
         uint256 amount = 100;
-        (, int256 price,,,) = engine.getPriceFeed(tokenAddr).latestRoundData();
+        (, int256 price,,,) = MockV3Aggregator(engine.getPriceFeed(tokenAddr)).latestRoundData();
 
         uint256 expectedUsdValue = uint256(price) * engine.getPRICE_SCALE() * amount / engine.getPrecisionUnit();
         uint256 actualUsdValue = engine.getUSDValue(tokenAddr, amount);
@@ -303,7 +303,7 @@ contract XHHEngineTest is Test {
         // mock price feed to return 0
         vm.mockCall(
             helperConfig.getNetworkConfig().collateralTokenPriceFeeds[0],
-            abi.encodeWithSelector(engine.getPriceFeed(tokenAddr).latestRoundData.selector),
+            abi.encodeWithSelector(MockV3Aggregator.latestRoundData.selector),
             abi.encode(0, 0, 0, 0, 0)
         );
 
@@ -328,7 +328,7 @@ contract XHHEngineTest is Test {
     function test_getTokenAmountFromUSD_Success() public {
         address tokenAddr = helperConfig.getNetworkConfig().collateralTokens[0];
         uint256 usdAmount = 100;
-        (, int256 price,,,) = engine.getPriceFeed(tokenAddr).latestRoundData();
+        (, int256 price,,,) = MockV3Aggregator(engine.getPriceFeed(tokenAddr)).latestRoundData();
 
         uint256 expectedTokenAmount = usdAmount * engine.getPrecisionUnit() / (uint256(price) * engine.getPRICE_SCALE());
         uint256 actualTokenAmount = engine.getTokenAmountFromUSD(tokenAddr, usdAmount);
@@ -364,7 +364,7 @@ contract XHHEngineTest is Test {
         // mock price feed to return 0
         vm.mockCall(
             helperConfig.getNetworkConfig().collateralTokenPriceFeeds[0],
-            abi.encodeWithSelector(engine.getPriceFeed(tokenAddr).latestRoundData.selector),
+            abi.encodeWithSelector(MockV3Aggregator.latestRoundData.selector),
             abi.encode(0, 0, 0, 0, 0)
         );
 

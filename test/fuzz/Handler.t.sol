@@ -6,6 +6,7 @@ import {XHHEngine} from "../../src/XHHEngine.sol";
 import {XHHStablecoin} from "../../src/XHHStablecoin.sol";
 import {Test, console} from "forge-std/Test.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
+import {MockV3Aggregator} from "@chainlink/contracts/src/v0.8/tests/MockV3Aggregator.sol";
 
 contract Handler is Test {
     XHHEngine public engine;
@@ -67,6 +68,12 @@ contract Handler is Test {
         vm.stopPrank();
         mintCount++;
     }
+
+    // function updateCollateralPrice(uint96 _price) public {
+    //     address collateralToken = engine.getCollateralTokens()[0];
+    //     MockV3Aggregator priceFeed = MockV3Aggregator(engine.getPriceFeed(collateralToken));
+    //     priceFeed.updateAnswer(int256(uint256(_price)));
+    // }
 
     // function burnXHH(uint256 _amount) public {
     //     (uint256 totalCollateralValue, uint256 totalMintedAmount) = engine.getAccountInformation(msg.sender);

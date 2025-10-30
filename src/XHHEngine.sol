@@ -6,6 +6,7 @@ import {XHHStablecoin} from "./XHHStablecoin.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {OracleLib} from "./libs/OracleLib.sol";
 
 contract XHHEngine is ReentrancyGuard {
     error XHHEngine_InvalidAddress();
@@ -21,6 +22,8 @@ contract XHHEngine is ReentrancyGuard {
 
     event XHHEngine_CollateralDeposited(address indexed user, address indexed token, uint256 amount);
     event XHHEngine_RedeemCollateral(address indexed from, address indexed to, address indexed token, uint256 amount);
+
+    using OracleLib for AggregatorV3Interface;
 
     /**
      * @dev Maps collateral token addresses to user addresses to deposited amounts.)
@@ -261,10 +264,10 @@ contract XHHEngine is ReentrancyGuard {
 
         //  get price from price feed
         AggregatorV3Interface priceFeed = AggregatorV3Interface(priceFeedAddr);
-        (, int256 price,,,) = priceFeed.latestRoundData();
-        if (price <= 0) {
-            revert XHHEngine_InvalidPriceFeed();
-        }
+        (, int256 price,,,) = priceFeed.staleCheckLatestRoundData();
+        // if (price <= 0) {
+        //     revert XHHEngine_InvalidPriceFeed();
+        // }
         //  convert price to uint256 and scale it to the same decimal as the collateral token
         // the price is in 8 decimal places, so we need to scale it to 18 decimal places
         // `price` is in 8 decimal places, so we need to scale it to 18 decimal places
@@ -292,10 +295,10 @@ contract XHHEngine is ReentrancyGuard {
 
         //  get price from price feed
         AggregatorV3Interface priceFeed = AggregatorV3Interface(priceFeedAddr);
-        (, int256 price,,,) = priceFeed.latestRoundData();
-        if (price <= 0) {
-            revert XHHEngine_InvalidPriceFeed();
-        }
+        (, int256 price,,,) = priceFeed.staleCheckLatestRoundData();
+        // if (price <= 0) {
+        //     revert XHHEngine_InvalidPriceFeed();
+        // }
         //  convert price to uint256 and scale it to the same decimal as the collateral token
         // the price is in 8 decimal places, so we need to scale it to 18 decimal places
         // `price` is in 8 decimal places, so we need to scale it to 18 decimal places
@@ -439,8 +442,8 @@ contract XHHEngine is ReentrancyGuard {
         return PRECISION_UNIT;
     }
 
-    function getPriceFeed(address tokenAddr) public view returns (AggregatorV3Interface) {
-        return AggregatorV3Interface(s_collateralTokenFeeds[tokenAddr]);
+    function getPriceFeed(address tokenAddr) public view returns (address) {
+        return s_collateralTokenFeeds[tokenAddr];
     }
 
     function getLiquidationBonus() public pure returns (uint256) {
