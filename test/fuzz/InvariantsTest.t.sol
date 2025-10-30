@@ -8,6 +8,7 @@ import {XHHStablecoin} from "../../src/XHHStablecoin.sol";
 import {Test, console, StdInvariant} from "forge-std/Test.sol";
 import {Deploy} from "../../script/Deploy.s.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
+import {Handler} from "./Handler.t.sol";
 
 contract InvariantsTest is StdInvariant, Test {
     XHHEngine public engine;
@@ -17,7 +18,8 @@ contract InvariantsTest is StdInvariant, Test {
     function setUp() public {
         Deploy deploy = new Deploy();
         (stablecoin, engine, helperConfig) = deploy.run();
-        targetContract(address(engine));
+        Handler handler = new Handler(engine, stablecoin);
+        targetContract(address(handler));
     }
 
     function invariant_protocolMustHaveMoreValueThanTotalSupply() public view {

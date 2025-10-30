@@ -450,4 +450,8 @@ contract XHHEngine is ReentrancyGuard {
     function getLiquidationPrecision() public pure returns (uint256) {
         return LIQUIDATION_PRECISION;
     }
+
+    function getCollateralTokens() public view returns (address[] memory) {
+        return s_collateralTokens;
+    }
 }
