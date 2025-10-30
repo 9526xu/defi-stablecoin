@@ -41,6 +41,20 @@ contract Handler is Test {
         vm.stopPrank();
     }
 
+    function mintXHH(uint256 _amount) public {
+        (uint256 totalCollateralValue, uint256 totalMintedAmount) = engine.getAccountInformation(msg.sender);
+
+        uint256 onlyMaxMintAmount = totalCollateralValue / 2 - totalMintedAmount;
+
+        _amount = bound(_amount, 0, onlyMaxMintAmount);
+        if (_amount == 0) {
+            return;
+        }
+        vm.startPrank(msg.sender);
+        engine.mintXHH(_amount);
+        vm.stopPrank();
+    }
+
     function getRandomAddress(uint256 _seed) public view returns (address) {
         address[] memory collateralTokens = engine.getCollateralTokens();
         address collateralToken = collateralTokens[_seed % collateralTokens.length];

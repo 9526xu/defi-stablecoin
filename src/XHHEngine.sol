@@ -454,4 +454,12 @@ contract XHHEngine is ReentrancyGuard {
     function getCollateralTokens() public view returns (address[] memory) {
         return s_collateralTokens;
     }
+
+    function getAccountInformation(address userAddr)
+        public
+        view
+        returns (uint256 totalCollateralValue, uint256 totalMintedAmount)
+    {
+        (totalCollateralValue, totalMintedAmount) = _calculateCollateralValues(userAddr);
+    }
 }
