@@ -11,6 +11,9 @@ contract Handler is Test {
     XHHEngine public engine;
     XHHStablecoin public stablecoin;
 
+    uint256 public mintCount = 0;
+    address[] public users;
+
     constructor(XHHEngine _engine, XHHStablecoin _stablecoin) {
         engine = _engine;
         stablecoin = _stablecoin;
@@ -26,6 +29,8 @@ contract Handler is Test {
         ERC20Mock(collateralToken).approve(address(engine), _amount);
         engine.depositCollateral(collateralToken, _amount);
         vm.stopPrank();
+
+        users.push(msg.sender);
     }
 
     function redeemCollateral(uint256 _seed, uint256 _amount) public {
@@ -41,19 +46,39 @@ contract Handler is Test {
         vm.stopPrank();
     }
 
-    function mintXHH(uint256 _amount) public {
-        (uint256 totalCollateralValue, uint256 totalMintedAmount) = engine.getAccountInformation(msg.sender);
+    function mintXHH(uint256 _amount, uint256 _seed) public {
+        if (users.length == 0) {
+            return;
+        }
+        address user = users[_seed % users.length];
+
+        (uint256 totalCollateralValue, uint256 totalMintedAmount) = engine.getAccountInformation(user);
 
         uint256 onlyMaxMintAmount = totalCollateralValue / 2 - totalMintedAmount;
 
         _amount = bound(_amount, 0, onlyMaxMintAmount);
+
         if (_amount == 0) {
             return;
         }
-        vm.startPrank(msg.sender);
+
+        vm.startPrank(user);
         engine.mintXHH(_amount);
         vm.stopPrank();
+        mintCount++;
     }
+
+    // function burnXHH(uint256 _amount) public {
+    //     (uint256 totalCollateralValue, uint256 totalMintedAmount) = engine.getAccountInformation(msg.sender);
+
+    //     _amount = bound(_amount, 0, totalMintedAmount);
+    //     if (_amount == 0) {
+    //         return;
+    //     }
+    //     vm.startPrank(msg.sender);
+    //     engine.burnXHH(_amount);
+    //     vm.stopPrank();
+    // }
 
     function getRandomAddress(uint256 _seed) public view returns (address) {
         address[] memory collateralTokens = engine.getCollateralTokens();

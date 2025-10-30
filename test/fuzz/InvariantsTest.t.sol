@@ -14,11 +14,12 @@ contract InvariantsTest is StdInvariant, Test {
     XHHEngine public engine;
     HelperConfig public helperConfig;
     XHHStablecoin public stablecoin;
+    Handler public handler;
 
     function setUp() public {
         Deploy deploy = new Deploy();
         (stablecoin, engine, helperConfig) = deploy.run();
-        Handler handler = new Handler(engine, stablecoin);
+        handler = new Handler(engine, stablecoin);
         targetContract(address(handler));
     }
 
@@ -34,6 +35,7 @@ contract InvariantsTest is StdInvariant, Test {
 
         console.log("totalValue:", totalValue);
         console.log("totalSupply:", totalSupply);
+        console.log("mintCount:", handler.mintCount());
 
         assert(totalValue >= totalSupply);
     }
